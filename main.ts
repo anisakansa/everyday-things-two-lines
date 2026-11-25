@@ -1,6 +1,9 @@
 // Everyday Things, Two Lines, Longer Run — make.fun entry.
-// Program writes exactly two lines to /output/entry.txt (relative output/
-// here, so the run stays deterministic and self-contained).
+// Program writes exactly two lines to /output/entry.txt (the absolute
+// output directory the grader provides, per the kit contract). If that
+// absolute path is not writable (a plain local run with no /output),
+// it falls back deterministically to output/ next to this script, so
+// the entry still lands in the same place locally.
 // Line 1 explains a toaster to a 10-year-old in one vivid sentence built
 // on a single analogy (a campfire toasting a marshmallow on a stick).
 // Line 2 says in one sentence what that analogy maps and what it leaves
@@ -26,6 +29,14 @@ const EXPECTED_LINES: number = 2;
 const EXPECTED_LINE_1_CHARS: number = 118;
 const EXPECTED_LINE_2_CHARS: number = 136;
 const EXPECTED_TOTAL_CHARS: number = 255;
+
+// Absolute output directory the grader provides (kit contract:
+// "the entry's program writes one text to /output/entry.txt").
+// The grader mounts the repository read-only, so writing next to the
+// script fails there with EROFS; the absolute path is the only writable
+// target in the grading sandbox.
+const PRIMARY_OUT_DIR: string = "/output";
+const ENTRY_FILE_NAME: string = "entry.txt";
 
 function isPureAscii(text: string): boolean {
   for (let i = 0; i < text.length; i += 1) {
@@ -83,13 +94,31 @@ function gate(entry: string): void {
   }
 }
 
+function writeEntry(entry: string): void {
+  try {
+    mkdirSync(PRIMARY_OUT_DIR, { recursive: true });
+    writeFileSync(join(PRIMARY_OUT_DIR, ENTRY_FILE_NAME), entry, "utf8");
+    return;
+  } catch (primaryError) {
+    // Local runs have no writable /output, so a failure here is
+    // expected outside the grader; fall through to the repo-relative
+    // directory instead of exiting with an error.
+    console.log(
+      "primary /output write failed (" +
+        (primaryError as Error).message +
+        "); using repo-relative output/ fallback",
+    );
+  }
+  const here: string = dirname(fileURLToPath(import.meta.url));
+  const fallbackDir: string = join(here, "output");
+  mkdirSync(fallbackDir, { recursive: true });
+  // No trailing newline: the pinned character counts are the file bytes.
+  writeFileSync(join(fallbackDir, ENTRY_FILE_NAME), entry, "utf8");
+}
+
 function main(): void {
   gate(ENTRY);
-  const here: string = dirname(fileURLToPath(import.meta.url));
-  const outDir: string = join(here, "output");
-  mkdirSync(outDir, { recursive: true });
-  // No trailing newline: the pinned character counts are the file bytes.
-  writeFileSync(join(outDir, "entry.txt"), ENTRY, "utf8");
+  writeEntry(ENTRY);
   console.log("line1_chars=" + String(LINE_1.length));
   console.log("line2_chars=" + String(LINE_2.length));
   console.log("total_chars=" + String(ENTRY.length));
